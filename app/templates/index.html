@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quadro da Turma</title>
+  <style>
+    :root {
+      --tinta: #14303a;
+      --papel: #f3f6f7;
+      --linha: #c9d4d8;
+      --suave: #6b8a93;
+      --destaque: #0f766e;
+      --erro: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--papel); color: var(--tinta);
+      font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.5;
+    }
+    main { max-width: 34rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    h1 { font-size: 2rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+    .sub { margin: 0 0 2rem; color: var(--suave); }
+    form { display: flex; gap: .5rem; margin-bottom: .5rem; }
+    input[type=text] {
+      flex: 1; padding: .7rem .8rem; font: inherit; color: inherit;
+      background: #fff; border: 1.5px solid var(--linha); border-radius: 6px;
+    }
+    button {
+      font: inherit; cursor: pointer; border-radius: 6px;
+      border: 1.5px solid var(--tinta); background: var(--tinta); color: #fff;
+      padding: .7rem 1rem;
+    }
+    button.leve { background: transparent; color: var(--suave); border-color: transparent; padding: .3rem .6rem; }
+    button.leve:hover { color: var(--erro); }
+    :focus-visible { outline: 3px solid var(--destaque); outline-offset: 2px; }
+    #aviso { min-height: 1.5rem; margin: 0 0 1rem; color: var(--erro); font-size: .95rem; }
+    ul { list-style: none; margin: 0; padding: 0; border-top: 1.5px solid var(--tinta); }
+    li { display: flex; align-items: center; gap: .75rem; padding: .8rem 0; border-bottom: 1px solid var(--linha); }
+    li label { flex: 1; cursor: pointer; }
+    li.feita label { color: var(--suave); text-decoration: line-through; }
+    input[type=checkbox] { width: 1.15rem; height: 1.15rem; accent-color: var(--destaque); }
+    #vazio { color: var(--suave); padding: 1.2rem 0; }
+    footer { margin-top: 2.5rem; font-size: .85rem; color: var(--suave); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Quadro da Turma</h1>
+    <p class="sub">Anote o que o grupo precisa entregar e marque o que já está pronto.</p>
+
+    <form id="form">
+      <input type="text" id="titulo" placeholder="Ex.: configurar o pipeline de CI" maxlength="120" aria-label="Título da tarefa" required>
+      <button type="submit">Adicionar tarefa</button>
+    </form>
+    <p id="aviso" role="alert"></p>
+
+    <ul id="lista"></ul>
+    <p id="vazio" hidden>Nenhuma tarefa ainda. Adicione a primeira acima.</p>
+
+    <footer>Versão em execução: <strong>{{ versao }}</strong></footer>
+  </main>
+
+  <script>
+    const lista = document.getElementById("lista");
+    const vazio = document.getElementById("vazio");
+    const aviso = document.getElementById("aviso");
+
+    async function chamar(url, opcoes) {
+      const r = await fetch(url, opcoes);
+      if (!r.ok) {
+        const corpo = await r.json().catch(() => ({}));
+        throw new Error(corpo.erro || "Algo deu errado. Tente de novo.");
+      }
+      return r.status === 204 ? null : r.json();
+    }
+
+    function desenhar(tarefas) {
+      lista.replaceChildren();
+      vazio.hidden = tarefas.length > 0;
+      for (const t of tarefas) {
+        const li = document.createElement("li");
+        if (t.concluida) li.className = "feita";
+
+        const caixa = document.createElement("input");
+        caixa.type = "checkbox";
+        caixa.id = "t" + t.id;
+        caixa.checked = t.concluida;
+        caixa.addEventListener("change", () => alterar(t.id, caixa.checked));
+
+        const rotulo = document.createElement("label");
+        rotulo.htmlFor = caixa.id;
+        rotulo.textContent = t.titulo;
+
+        const apagar = document.createElement("button");
+        apagar.type = "button";
+        apagar.className = "leve";
+        apagar.textContent = "Apagar";
+        apagar.addEventListener("click", () => remover(t.id));
+
+        li.append(caixa, rotulo, apagar);
+        lista.append(li);
+      }
+    }
+
+    async function carregar() {
+      try { desenhar(await chamar("/api/tarefas")); aviso.textContent = ""; }
+      catch (e) { aviso.textContent = e.message; }
+    }
+
+    async function alterar(id, concluida) {
+      try {
+        await chamar("/api/tarefas/" + id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ concluida }),
+        });
+        carregar();
+      } catch (e) { aviso.textContent = e.message; }
+    }
+
+    async function remover(id) {
+      try { await chamar("/api/tarefas/" + id, { method: "DELETE" }); carregar(); }
+      catch (e) { aviso.textContent = e.message; }
+    }
+
+    document.getElementById("form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const campo = document.getElementById("titulo");
+      try {
+        await chamar("/api/tarefas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ titulo: campo.value }),
+        });
+        campo.value = "";
+        carregar();
+      } catch (e) { aviso.textContent = e.message; }
+    });
+
+    carregar();
+  </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+name: Rollback (homologação simulada)
+
+# Execução manual: Actions > Rollback > Run workflow > informe a versão boa (ex.: 1.0.0)
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão para a qual voltar (sem o v), ex.: 1.0.0"
+        required: true
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DB_NAME: tarefas_homolog
+      DB_USER: tarefas
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      VERSAO: ${{ inputs.versao }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Definir a imagem da versão boa
+        run: echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:$VERSAO" >> "$GITHUB_ENV"
+      - name: Voltar para a versão anterior
+        run: |
+          docker compose pull app
+          docker compose up -d --no-build
+      - name: Confirmar que voltou
+        run: bash scripts/smoke_test.sh http://localhost:8000 "$VERSAO"
+      - name: Desligar
+        if: always()
+        run: docker compose down -v
